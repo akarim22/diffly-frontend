@@ -1,0 +1,170 @@
+import { useState } from "react";
+
+function App() {
+  const [file1, setFile1] = useState(null);
+  const [file2, setFile2] = useState(null);
+  const [diffResult, setDiffResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expandedFiles, setExpandedFiles] = useState({});
+
+  const toggleFile = (file) => {
+    setExpandedFiles((prev) => ({
+      ...prev,
+      [file]: !prev[file],
+    }));
+  };
+
+  const handleCompare = async () => {
+    if (!file1 || !file2) {
+      alert("Please select both zip files");
+      return;
+    }
+
+    setLoading(true);
+    setDiffResult(null);
+
+    const formData = new FormData();
+    formData.append("zip1", file1);
+    formData.append("zip2", file2);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/compare", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+      setDiffResult(data);
+    } catch (err) {
+      console.error(err);
+      alert("Error comparing files");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadJSON = (content, filename) => {
+    const blob = new Blob([JSON.stringify(content, null, 2)], {
+      type: "application/json",
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+  };
+
+  const renderSideBySide = (diffResult) => {
+    if (!diffResult) return null;
+
+    const allFiles = [
+      ...diffResult.diff.added.map((f) => ({ type: "Added", file: f })),
+      ...diffResult.diff.removed.map((f) => ({ type: "Removed", file: f })),
+      ...diffResult.diff.modified.map((f) => ({ type: "Modified", ...f })),
+    ];
+
+    return (
+      <div className="space-y-6">
+        {allFiles.map((f) => (
+          <div key={f.file} className="border rounded p-2 bg-gray-50">
+            <div
+              className="flex justify-between cursor-pointer"
+              onClick={() => toggleFile(f.file)}
+            >
+              <p className="font-semibold">
+                [{f.type}] {f.file}{" "}
+                {f.lines_changed ? `(lines changed: ${f.lines_changed})` : ""}
+              </p>
+              <span>{expandedFiles[f.file] ? "▼" : "▶"}</span>
+            </div>
+
+            {expandedFiles[f.file] && (
+              <div className="flex gap-2 mt-2 overflow-auto max-h-80">
+                <div className="w-1/2 bg-gray-100 p-2 rounded overflow-auto">
+                  <h5 className="font-semibold mb-1">Old</h5>
+                  {(f.diff_preview || []).map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={line.startsWith("-") ? "text-red-700" : ""}
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+                <div className="w-1/2 bg-gray-100 p-2 rounded overflow-auto">
+                  <h5 className="font-semibold mb-1">New</h5>
+                  {(f.diff_preview || []).map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={line.startsWith("+") ? "text-green-700" : ""}
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Diffly - Code Diff MVP</h1>
+
+      <div className="flex gap-2 items-center mb-4">
+        <input
+          type="file"
+          accept=".zip"
+          onChange={(e) => setFile1(e.target.files[0])}
+        />
+        <input
+          type="file"
+          accept=".zip"
+          onChange={(e) => setFile2(e.target.files[0])}
+        />
+        <button
+          onClick={handleCompare}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Compare
+        </button>
+        {diffResult && (
+          <>
+            <button
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              onClick={() => downloadJSON(diffResult.diff, "diff.json")}
+            >
+              Download Diff JSON
+            </button>
+            <button
+              className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+              onClick={() => downloadJSON({ summary: diffResult.summary }, "summary.json")}
+            >
+              Download AI Summary
+            </button>
+          </>
+        )}
+      </div>
+
+      {loading && <p>Comparing files, please wait...</p>}
+
+      {diffResult && (
+        <div className="mt-6">
+          {renderSideBySide(diffResult)}
+
+          {diffResult.summary && (
+            <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+              <h3 className="font-bold text-yellow-800 mb-2">AI Summary</h3>
+              <p>{diffResult.summary}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
+
